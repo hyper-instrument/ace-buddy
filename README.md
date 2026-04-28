@@ -36,7 +36,7 @@ make install
 安装会自动完成：
 - 安装 Python 依赖（pyserial）
 - 合并 hooks 到 `~/.claude/settings.json`
-- 注册 Claude Code marketplace 插件（`/ace-buddy-*` 命令）
+- 注册 Claude Code marketplace 插件（`/ace-buddy:*` 命令）
 
 ### 2. 刷固件
 
@@ -57,7 +57,7 @@ pio run -t erase && pio run -t upload
 
 **在 Claude Code 中：**
 ```
-/ace-buddy-start
+/ace-buddy:start
 ```
 
 **或手动：**
@@ -86,7 +86,7 @@ daemon 启动后自动连接设备（先检测 USB serial，无则切 BLE），C
 
 ## Claude Code slash 命令
 
-插件安装后，在 Claude Code 中可用（命令带 `ace-buddy:` 命名空间前缀）：
+插件安装后，在 Claude Code 中可用（skills 带 `ace-buddy:` 命名空间前缀）：
 
 | 命令 | 说明 |
 |------|------|
@@ -168,7 +168,7 @@ tools/
   claude_code_bridge.py — Bridge daemon
 scripts/         — daemon 生命周期脚本 (start/stop/status/flash/install)
 hooks/           — Claude Code hooks 配置 (hooks.json)
-commands/        — Claude Code slash 命令 (/ace-buddy:start, /ace-buddy:stop, ...)
+skills/          — Claude Code skills (/ace-buddy:start, /ace-buddy:stop, ...)
 characters/      — GIF 角色包
 .claude-plugin/  — Claude Code marketplace 插件元数据
 ```
