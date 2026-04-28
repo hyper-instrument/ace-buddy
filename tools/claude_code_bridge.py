@@ -436,6 +436,11 @@ def scan_tasks() -> list:
 # Heartbeat construction
 # ---------------------------------------------------------------------------
 
+# Firmware line buffer is 1024 bytes.  Keep heartbeat JSON well under that
+# limit so that deserializeJson never fails silently.
+_HB_MAX_BYTES = 900
+
+
 def build_heartbeat() -> dict:
     with STATE_LOCK:
         msg = (f"approve: {ACTIVE_PROMPT['tool']}" if ACTIVE_PROMPT
@@ -445,7 +450,7 @@ def build_heartbeat() -> dict:
             "running":      len(SESSIONS_RUNNING),
             "waiting":      len(SESSIONS_WAITING),
             "msg":          msg[:23],
-            "entries":      list(TRANSCRIPT),
+            "entries":      list(TRANSCRIPT)[:4],
             "tokens":       0,
             "tokens_today": 0,
         }
@@ -454,11 +459,11 @@ def build_heartbeat() -> dict:
                 "id":   ACTIVE_PROMPT["id"],
                 "tool": ACTIVE_PROMPT["tool"][:19],
                 "hint": ACTIVE_PROMPT["hint"][:43],
-                "body": ACTIVE_PROMPT["body"][:500],
+                "body": ACTIVE_PROMPT["body"][:80],
                 "kind": ACTIVE_PROMPT.get("kind", "permission"),
             }
             opts = ACTIVE_PROMPT.get("option_labels") or []
-            if opts: p["options"] = opts[:4]
+            if opts: p["options"] = [o[:16] for o in opts[:4]]
             sid = ACTIVE_PROMPT.get("session_id", "")
             if sid:
                 p["sid"] = sid[:8]
@@ -467,17 +472,15 @@ def build_heartbeat() -> dict:
             hb["prompt"] = p
 
         sessions_list = []
-        for sid in list(SESSIONS_TOTAL)[:5]:
+        for sid in list(SESSIONS_TOTAL)[:2]:
             meta = SESSION_META.get(sid) or {}
             sessions_list.append({
                 "sid":     sid[:8],
-                "full":    sid,
-                "proj":    (meta.get("project", "") or "")[:22],
-                "branch":  (meta.get("branch", "") or "")[:16],
+                "proj":    (meta.get("project", "") or "")[:16],
+                "branch":  (meta.get("branch", "") or "")[:12],
                 "dirty":   meta.get("dirty", 0),
                 "running": sid in SESSIONS_RUNNING,
                 "waiting": sid in SESSIONS_WAITING,
-                "focused": sid == FOCUSED_SID,
             })
         if sessions_list:
             hb["sessions"] = sessions_list
@@ -508,11 +511,27 @@ def build_heartbeat() -> dict:
         if s_model:       hb["model"] = s_model
         elif MODEL_NAME:   hb["model"] = MODEL_NAME
 
-        a_msg = SESSION_ASSISTANT.get(sid) if sid else None
-        if a_msg:   hb["assistant_msg"] = a_msg
-        elif ASSISTANT_MSG: hb["assistant_msg"] = ASSISTANT_MSG
+    tasks = scan_tasks()[:8]
+    for t in tasks:
+        t["subject"] = t["subject"][:20]
+    hb["tasks"] = tasks
 
-    hb["tasks"] = scan_tasks()[:8]
+    # Safety: if heartbeat exceeds firmware buffer, progressively drop
+    # optional fields until it fits.
+    raw = json.dumps(hb, separators=(",", ":"), ensure_ascii=False)
+    if len(raw) > _HB_MAX_BYTES:
+        hb.pop("sessions", None)
+        raw = json.dumps(hb, separators=(",", ":"), ensure_ascii=False)
+    if len(raw) > _HB_MAX_BYTES:
+        hb["entries"] = hb.get("entries", [])[:2]
+        raw = json.dumps(hb, separators=(",", ":"), ensure_ascii=False)
+    if len(raw) > _HB_MAX_BYTES:
+        hb.pop("entries", None)
+        hb["tasks"] = hb.get("tasks", [])[:4]
+    if len(raw) > _HB_MAX_BYTES:
+        if "prompt" in hb:
+            hb["prompt"]["body"] = hb["prompt"]["body"][:30]
+
     return hb
 
 
@@ -644,6 +663,35 @@ def extract_last_assistant(path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Hook deduplication -- settings.json hooks + plugin auto-loaded hooks
+# can both fire for the same event, causing duplicate processing.
+# ---------------------------------------------------------------------------
+
+_DEDUP_LOCK = threading.Lock()
+_DEDUP_CACHE: dict = {}   # key -> timestamp
+_DEDUP_TTL = 2.0          # seconds
+
+
+def _is_duplicate_hook(payload: dict) -> bool:
+    """Return True if this hook payload was already seen recently."""
+    event = payload.get("hook_event_name", "")
+    sid = payload.get("session_id", "")
+    tool = payload.get("tool_name", "")
+    key = f"{event}:{sid}:{tool}"
+    now = time.time()
+    with _DEDUP_LOCK:
+        # Prune stale entries
+        stale = [k for k, t in _DEDUP_CACHE.items() if now - t > _DEDUP_TTL * 5]
+        for k in stale:
+            del _DEDUP_CACHE[k]
+        prev = _DEDUP_CACHE.get(key)
+        if prev is not None and (now - prev) < _DEDUP_TTL:
+            return True
+        _DEDUP_CACHE[key] = now
+    return False
+
+
+# ---------------------------------------------------------------------------
 # HTTP handler -- receives Claude Code hook payloads
 # ---------------------------------------------------------------------------
 
@@ -660,6 +708,10 @@ class HookHandler(BaseHTTPRequestHandler):
 
         event = payload.get("hook_event_name", "")
         log(f"[hook] {event} session={payload.get('session_id', '')[:8]}")
+
+        if _is_duplicate_hook(payload):
+            log(f"[hook] duplicate {event}, skipping")
+            return self._reply(200, {})
 
         sid = payload.get("session_id", "")
         cwd = payload.get("cwd", "")
@@ -842,7 +894,7 @@ class HookHandler(BaseHTTPRequestHandler):
 def tz_offset_seconds() -> int:
     now = time.time()
     local = datetime.fromtimestamp(now)
-    utc = datetime.utcfromtimestamp(now)
+    utc = datetime.fromtimestamp(now, tz=__import__('datetime').timezone.utc).replace(tzinfo=None)
     return int((local - utc).total_seconds())
 
 
