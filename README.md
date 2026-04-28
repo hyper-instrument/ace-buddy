@@ -64,7 +64,7 @@ pio run -t erase && pio run -t upload
 ```bash
 make start
 # 或
-bash plugin/scripts/start.sh
+bash scripts/start.sh
 ```
 
 daemon 在 `127.0.0.1:9876` 监听，接收 Claude Code hook 事件并转发到设备。
@@ -166,12 +166,10 @@ src/
   stats.h        — NVS 存储（统计、设置、宠物名）
 tools/
   claude_code_bridge.py — Bridge daemon
-plugin/
-  scripts/       — daemon 生命周期脚本
-  commands/      — Claude Code plugin 命令
-  settings/      — hooks 配置
+scripts/         — daemon 生命周期脚本 (start/stop/status/flash/install)
+settings/        — hooks 配置
 plugins/
-  claude/commands/ — Claude Code marketplace 命令
+  claude/commands/ — Claude Code slash 命令 (marketplace 插件)
 characters/      — GIF 角色包
 .claude-plugin/  — Claude Code marketplace 插件元数据
 ```

@@ -9,8 +9,8 @@
 
 set -euo pipefail
 
-PLUGIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
-REPO_ROOT="$( cd "$PLUGIN_DIR/.." && pwd )"
+SCRIPTS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$( cd "$SCRIPTS_DIR/.." && pwd )"
 STATE_DIR="$HOME/.ace-buddy"
 PID_FILE="$STATE_DIR/daemon.pid"
 LOG_FILE="$STATE_DIR/daemon.log"
