@@ -545,6 +545,7 @@ static void drawClock() {
     // via peek mode. Clearing from 90 leaves both untouched.
     spr.fillRect(0, 90, W, H - 90, p.bg);
     spr.setTextDatum(MC_DATUM);
+    spr.setTextSize(1); spr.setTextColor(p.textDim, p.bg); spr.drawString("ACE buddy", CX, 110);
     spr.setTextSize(4); spr.setTextColor(p.text, p.bg);    spr.drawString(hm, CX, 140);
     spr.setTextSize(2); spr.setTextColor(p.textDim, p.bg); spr.drawString(ss, CX, 175);
     spr.setTextSize(1);                                     spr.drawString(dl, CX, 200);
@@ -1056,11 +1057,7 @@ void drawPet() {
   spr.setTextSize(1);
   spr.setTextColor(p.text, p.bg);
   spr.setCursor(4, y + 2);
-  if (ownerName()[0]) {
-    spr.printf("%s's %s", ownerName(), petName());
-  } else {
-    spr.print(petName());
-  }
+  spr.print("ACE buddy");
   spr.setTextColor(p.textDim, p.bg);
   spr.setCursor(W - 28, y + 2);
   spr.printf("%u/%u", petPage + 1, PET_PAGES);
@@ -1147,16 +1144,14 @@ void setup() {
     spr.fillSprite(p.bg);
     spr.setTextDatum(MC_DATUM);
     spr.setTextSize(2);
+    spr.setTextColor(p.body, p.bg);   spr.drawString("ACE buddy", W/2, H/2 - 12);
+    spr.setTextSize(1);
+    spr.setTextColor(p.textDim, p.bg);
     if (ownerName()[0]) {
       char line[40];
-      snprintf(line, sizeof(line), "%s's", ownerName());
-      spr.setTextColor(p.text, p.bg);   spr.drawString(line, W/2, H/2 - 12);
-      spr.setTextColor(p.body, p.bg);   spr.drawString(petName(), W/2, H/2 + 12);
+      snprintf(line, sizeof(line), "Hello, %s!", ownerName());
+      spr.drawString(line, W/2, H/2 + 12);
     } else {
-      // First boot, no owner pushed yet — say hi.
-      spr.setTextColor(p.body, p.bg);   spr.drawString("Hello!", W/2, H/2 - 12);
-      spr.setTextSize(1);
-      spr.setTextColor(p.textDim, p.bg);
       spr.drawString("a buddy appears", W/2, H/2 + 12);
     }
     spr.setTextDatum(TL_DATUM); spr.setTextSize(1);
