@@ -1,0 +1,20 @@
+{
+  "name": "ace-buddy",
+  "description": "Hardware buddy companion for Claude Code — bridge daemon, device control, task display",
+  "version": "0.1.0",
+  "author": {
+    "name": "Liu Peng",
+    "email": "liupeng@dp.tech"
+  },
+  "homepage": "https://github.com/hyper-instrument/ace-buddy",
+  "repository": "https://github.com/hyper-instrument/ace-buddy",
+  "license": "MIT",
+  "keywords": [
+    "ace",
+    "buddy",
+    "hardware",
+    "m5stick",
+    "claude-code",
+    "bridge"
+  ]
+}
