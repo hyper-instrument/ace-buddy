@@ -4,6 +4,12 @@
 #include "ble_bridge.h"
 #include "xfer.h"
 
+struct TaskEntry {
+  char     id[8];
+  char     subject[41];
+  uint8_t  status;           // 0=pending, 1=in_progress, 2=completed
+};
+
 struct TamaState {
   uint8_t  sessionsTotal;
   uint8_t  sessionsRunning;
@@ -19,6 +25,8 @@ struct TamaState {
   char     promptId[40];     // pending permission request ID; empty = no prompt
   char     promptTool[20];
   char     promptHint[44];
+  TaskEntry tasks[8];
+  uint8_t  nTasks;
 };
 
 // ---------------------------------------------------------------------------
@@ -115,6 +123,29 @@ static void _applyJson(const char* line, TamaState* out) {
   } else {
     out->promptId[0] = 0; out->promptTool[0] = 0; out->promptHint[0] = 0;
   }
+  JsonArray ta = doc["tasks"];
+  if (!ta.isNull()) {
+    uint8_t n = 0;
+    for (JsonVariant v : ta) {
+      if (n >= 8) break;
+      JsonObject t = v.as<JsonObject>();
+      if (t.isNull()) continue;
+      const char* tid = t["id"];
+      const char* sub = t["subject"];
+      const char* st  = t["status"];
+      strncpy(out->tasks[n].id, tid ? tid : "", sizeof(out->tasks[n].id)-1);
+      out->tasks[n].id[sizeof(out->tasks[n].id)-1] = 0;
+      strncpy(out->tasks[n].subject, sub ? sub : "", sizeof(out->tasks[n].subject)-1);
+      out->tasks[n].subject[sizeof(out->tasks[n].subject)-1] = 0;
+      if (st && strcmp(st, "in_progress") == 0)  out->tasks[n].status = 1;
+      else if (st && strcmp(st, "completed") == 0) out->tasks[n].status = 2;
+      else out->tasks[n].status = 0;
+      n++;
+    }
+    out->nTasks = n;
+  } else {
+    out->nTasks = 0;
+  }
   out->lastUpdated = millis();
   _lastLiveMs = millis();
 }
@@ -170,7 +201,7 @@ inline void dataPoll(TamaState* out) {
   out->connected = dataConnected();
   if (!out->connected) {
     out->sessionsTotal=0; out->sessionsRunning=0; out->sessionsWaiting=0;
-    out->recentlyCompleted=false; out->lastUpdated=now;
+    out->recentlyCompleted=false; out->nTasks=0; out->lastUpdated=now;
     strncpy(out->msg, "No Claude connected", sizeof(out->msg)-1);
     out->msg[sizeof(out->msg)-1]=0;
   }

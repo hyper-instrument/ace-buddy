@@ -214,7 +214,7 @@ inline void settingsSave() {
   _prefs.end();
 }
 
-static char _petName[24] = "Buddy";
+static char _petName[24] = "ACE buddy";
 static char _ownerName[32] = "";
 
 inline void petNameLoad() {

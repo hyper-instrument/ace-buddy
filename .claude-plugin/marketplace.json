@@ -1,0 +1,20 @@
+{
+  "name": "ace-buddy",
+  "description": "Hardware buddy companion for Claude Code",
+  "owner": {
+    "name": "Liu Peng",
+    "email": "liupeng@dp.tech"
+  },
+  "plugins": [
+    {
+      "name": "ace-buddy",
+      "description": "Bridge daemon + device control for M5StickC hardware buddy",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "Liu Peng",
+        "email": "liupeng@dp.tech"
+      }
+    }
+  ]
+}

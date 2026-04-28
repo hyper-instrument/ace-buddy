@@ -1,208 +1,199 @@
-# claude-desktop-buddy
+# ACE buddy
 
-Claude for macOS and Windows can connect Claude Cowork and Claude Code to
-maker devices over BLE, so developers and makers can build hardware that
-displays permission prompts, recent messages, and other interactions. We've
-been impressed by the creativity of the maker community around Claude -
-providing a lightweight, opt-in API is our way of making it easier to build
-fun little hardware devices that integrate with Claude.
+M5StickC Plus 硬件伴侣，连接 Claude Code 终端，实时展示会话状态、token 用量、权限审批和任务进度。
 
-> **Building your own device?** You don't need any of the code here. See
-> **[REFERENCE.md](REFERENCE.md)** for the wire protocol: Nordic UART
-> Service UUIDs, JSON schemas, and the folder push transport.
-
-As an example, we built a desk pet on ESP32 that lives off permission
-approvals and interaction with Claude. It sleeps when nothing's happening,
-wakes when sessions start, gets visibly impatient when an approval prompt is
-waiting, and lets you approve or deny right from the device.
+基于 [claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy) 开发，新增 Claude Code 集成。
 
 <p align="center">
   <img src="docs/device.jpg" alt="M5StickC Plus running the buddy firmware" width="500">
 </p>
 
-## Hardware
+## 功能
 
-The firmware targets ESP32 with the Arduino framework. As written, it
-depends on the M5Unified library for its display, IMU, and button
-drivers—so it works with M5StickC Plus, and M5StickS3 out of the box.
+- 实时显示 Claude Code 会话数、token 用量
+- 设备上直接 approve/deny 权限请求
+- Tasks 页面展示当前进行中的任务（`~/.claude/tasks/`）
+- 18 种 ASCII 宠物 + 自定义 GIF 角色
+- 待机时钟（自动旋转）
+- BLE / USB Serial 双模连接
 
-## Flashing
+## 快速开始
 
-Install
-[PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/),
-then:
+### 1. 安装
+
+**方式一：通过 ace 项目**
+```bash
+cd ace
+make install-buddy
+```
+
+**方式二：直接在 ace-buddy 目录**
+```bash
+cd ace-buddy
+make install
+```
+
+安装会自动完成：
+- 安装 Python 依赖（pyserial）
+- 合并 hooks 到 `~/.claude/settings.json`
+- 注册 Claude Code marketplace 插件（`/ace-buddy-*` 命令）
+
+### 2. 刷固件
+
+需要 [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/) 和 USB 连接设备：
 
 ```bash
+make flash
+# 或
 pio run -t upload
 ```
 
-If you're starting from a previously-flashed device, wipe it first:
-
+首次刷写建议先擦除：
 ```bash
 pio run -t erase && pio run -t upload
 ```
 
-Once running, you can also wipe everything from the device itself: **hold A
-→ settings → reset → factory reset → tap twice**.
+### 3. 启动 daemon
 
-## Pairing
-
-To pair your device with Claude, first enable developer mode (**Help →
-Troubleshooting → Enable Developer Mode**). Then, open the Hardware Buddy
-window in **Developer → Open Hardware Buddy…**, click **Connect**, and pick
-your device from the list. macOS will prompt for Bluetooth permission on
-first connect; grant it.
-
-<p align="center">
-  <img src="docs/menu.png" alt="Developer → Open Hardware Buddy… menu item" width="420">
-  <img src="docs/hardware-buddy-window.png" alt="Hardware Buddy window with Connect button and folder drop target" width="420">
-</p>
-
-Once paired, the bridge auto-reconnects whenever both sides are awake.
-
-If discovery isn't finding the stick:
-
-- Make sure it's awake (any button press)
-- Check the stick's settings menu → bluetooth is on
-
-## Controls
-
-|                         | Normal               | Pet         | Info        | Approval    |
-| ----------------------- | -------------------- | ----------- | ----------- | ----------- |
-| **A** (front)           | next screen          | next screen | next screen | **approve** |
-| **B** (right)           | scroll transcript    | next page   | next page   | **deny**    |
-| **Hold A**              | menu                 | menu        | menu        | menu        |
-| **Power** (left, short) | toggle screen off    |             |             |             |
-| **Power** (left, ~6s)   | hard power off       |             |             |             |
-| **Shake**               | dizzy                |             |             | —           |
-| **Face-down**           | nap (energy refills) |             |             |             |
-
-The screen auto-powers-off after 30s of no interaction (kept on while an
-approval prompt is up). Any button press wakes it.
-
-## ASCII pets
-
-Eighteen pets, each with seven animations (sleep, idle, busy, attention,
-celebrate, dizzy, heart). Menu → "next pet" cycles them with a counter.
-Choice persists to NVS.
-
-## GIF pets
-
-If you want a custom GIF character instead of an ASCII buddy, drag a
-character pack folder onto the drop target in the Hardware Buddy window. The
-app streams it over BLE and the stick switches to GIF mode live. **Settings
-→ delete char** reverts to ASCII mode.
-
-A character pack is a folder with `manifest.json` and 96px-wide GIFs:
-
-```json
-{
-  "name": "bufo",
-  "colors": {
-    "body": "#6B8E23",
-    "bg": "#000000",
-    "text": "#FFFFFF",
-    "textDim": "#808080",
-    "ink": "#000000"
-  },
-  "states": {
-    "sleep": "sleep.gif",
-    "idle": ["idle_0.gif", "idle_1.gif", "idle_2.gif"],
-    "busy": "busy.gif",
-    "attention": "attention.gif",
-    "celebrate": "celebrate.gif",
-    "dizzy": "dizzy.gif",
-    "heart": "heart.gif"
-  }
-}
+**在 Claude Code 中：**
+```
+/ace-buddy-start
 ```
 
-State values can be a single filename or an array. Arrays rotate: each
-loop-end advances to the next GIF, useful for an idle activity carousel so
-the home screen doesn't loop one clip forever.
-
-GIFs are 96px wide; height up to ~140px stays on a 135×240 portrait screen.
-Crop tight to the character — transparent margins waste screen and shrink
-the sprite. `tools/prep_character.py` handles the resize: feed it source
-GIFs at any sizes and it produces a 96px-wide set where the character is the
-same scale in every state.
-
-The whole folder must fit under 1.8MB —
-`gifsicle --lossy=80 -O3 --colors 64` typically cuts 40–60%.
-
-See `characters/bufo/` for a working example.
-
-If you're iterating on a character and would rather skip the BLE round-trip,
-`tools/flash_character.py characters/bufo` stages it into `data/` and runs
-`pio run -t uploadfs` directly over USB.
-
-## The seven states
-
-| State       | Trigger                     | Feel                        |
-| ----------- | --------------------------- | --------------------------- |
-| `sleep`     | bridge not connected        | eyes closed, slow breathing |
-| `idle`      | connected, nothing urgent   | blinking, looking around    |
-| `busy`      | sessions actively running   | sweating, working           |
-| `attention` | approval pending            | alert, **LED blinks**       |
-| `celebrate` | level up (every 50K tokens) | confetti, bouncing          |
-| `dizzy`     | you shook the stick         | spiral eyes, wobbling       |
-| `heart`     | approved in under 5s        | floating hearts             |
-
-## Claude Code Integration
-
-In addition to Claude Desktop (BLE), ace-buddy can work with **Claude Code
-terminal sessions** via a bridge daemon. The daemon receives hook payloads
-from Claude Code over HTTP and forwards them to the device over
-serial/BLE, using the same heartbeat protocol.
-
-### Quick start (from ace repo)
-
+**或手动：**
 ```bash
-make install-buddy
+make start
+# 或
+bash plugin/scripts/start.sh
 ```
 
-### Manual install
+daemon 在 `127.0.0.1:9876` 监听，接收 Claude Code hook 事件并转发到设备。
 
-```bash
-pip install pyserial
-bash plugin/scripts/install-hooks.sh   # merge hooks into ~/.claude/settings.json
-bash plugin/scripts/start.sh           # start the bridge daemon
+### 4. 使用
+
+daemon 启动后自动连接设备（先检测 USB serial，无则切 BLE），Claude Code 的 hook 事件会自动推送到设备。
+
+## Makefile 命令
+
+| 命令 | 说明 |
+|------|------|
+| `make install` | 安装（pyserial + hooks + 插件注册） |
+| `make start` | 启动 bridge daemon |
+| `make stop` | 停止 bridge daemon |
+| `make status` | 查看 daemon 状态 |
+| `make flash` | 编译并刷写固件（需 PlatformIO + USB） |
+| `make uninstall` | 卸载（停止 daemon + 清理插件 + 清理状态） |
+
+## Claude Code slash 命令
+
+插件安装后，在 Claude Code 中可用：
+
+| 命令 | 说明 |
+|------|------|
+| `/ace-buddy-start` | 启动 bridge daemon |
+| `/ace-buddy-stop` | 停止 daemon |
+| `/ace-buddy-status` | 查看 daemon + 设备状态 |
+| `/ace-buddy-install` | 完整安装（依赖、hooks、固件、daemon） |
+| `/ace-buddy-flash` | 重新刷写固件 |
+
+## 设备按键
+
+|                         | Normal               | Pet         | Info        | Tasks       | Approval    |
+| ----------------------- | -------------------- | ----------- | ----------- | ----------- | ----------- |
+| **A** (前面)            | 切换页面              | 切换页面     | 切换页面     | 切换页面     | **approve** |
+| **B** (右侧)            | 滚动 transcript      | 翻页        | 翻页        | 滚动任务     | **deny**    |
+| **长按 A**              | 菜单                 | 菜单        | 菜单        | 菜单        | 菜单        |
+| **Power** (左侧短按)    | 关屏                 |             |             |             |             |
+| **晃动**                | dizzy                |             |             |             | —           |
+| **倒扣**                | 休眠（恢复能量）      |             |             |             |             |
+
+页面循环：Normal → Pet → Info → **Tasks** → Normal → ...
+
+## Tasks 页面
+
+展示 `~/.claude/tasks/` 下的任务列表：
+
+| 符号 | 颜色 | 状态 |
+|------|------|------|
+| `-` | 灰色 | pending |
+| `>` | 橙色 | in_progress |
+| `+` | 绿色 | completed |
+
+Bridge daemon 每 5 秒轮询一次任务文件，最多显示 8 个。
+
+## 架构
+
+```
+Claude Code hook ──POST──> bridge daemon (127.0.0.1:9876) ──serial/BLE──> ACE buddy 设备
+                                  ^                                            |
+                                  +──────────── permission ack ────────────────+
 ```
 
-### Slash commands (after plugin install)
+- **Bridge daemon** (`tools/claude_code_bridge.py`): Python HTTP 服务，接收 Claude Code hooks，转为 heartbeat JSON 发送到设备
+- **Heartbeat 协议**: 每 ~10s 或状态变化时发送，包含 sessions、tokens、prompt、tasks 等数据
+- **设备固件**: M5StickC Plus (ESP32)，基于 Arduino + M5Unified
 
-| Command | Description |
-|---------|-------------|
-| `/ace-buddy-install` | Full setup (deps, hooks, flash, daemon) |
-| `/ace-buddy-start` | Start the bridge daemon |
-| `/ace-buddy-stop` | Stop the bridge daemon |
-| `/ace-buddy-status` | Show daemon + device status |
-| `/ace-buddy-flash` | Re-flash firmware |
+## 七种状态
 
-See [plugin/README.md](plugin/README.md) for configuration options.
+| 状态 | 触发 | 表现 |
+|------|------|------|
+| `sleep` | 未连接 | 闭眼，慢呼吸 |
+| `idle` | 已连接，无事件 | 眨眼，四处看 |
+| `busy` | 会话运行中 | 冒汗，忙碌 |
+| `attention` | 权限待审批 | 警觉，LED 闪烁 |
+| `celebrate` | 每 50K token 升级 | 庆祝，蹦跳 |
+| `dizzy` | 摇晃设备 | 转圈眼 |
+| `heart` | 5 秒内 approve | 飘爱心 |
 
-## Project layout
+## Hardware
+
+固件基于 ESP32 Arduino 框架，使用 M5Unified 库。支持：
+- M5StickC Plus
+- M5StickC Plus2
+- M5StickS3
+
+## 项目结构
 
 ```
 src/
-  main.cpp       — loop, state machine, UI screens
-  buddy.cpp      — ASCII species dispatch + render helpers
-  buddies/       — one file per species, seven anim functions each
-  ble_bridge.cpp — Nordic UART service, line-buffered TX/RX
-  character.cpp  — GIF decode + render
-  data.h         — wire protocol, JSON parse
-  xfer.h         — folder push receiver
-  stats.h        — NVS-backed stats, settings, owner, species choice
-characters/      — example GIF character packs
-tools/           — generators and converters
-plugin/          — Claude Code plugin (bridge daemon, hooks, commands)
+  main.cpp       — 主循环、状态机、UI 页面
+  buddy.cpp      — ASCII 宠物渲染
+  buddies/       — 18 种宠物动画
+  ble_bridge.cpp — Nordic UART BLE 服务
+  character.cpp  — GIF 解码渲染
+  data.h         — 通信协议、JSON 解析
+  xfer.h         — 文件传输
+  stats.h        — NVS 存储（统计、设置、宠物名）
+tools/
+  claude_code_bridge.py — Bridge daemon
+plugin/
+  scripts/       — daemon 生命周期脚本
+  commands/      — Claude Code plugin 命令
+  settings/      — hooks 配置
+plugins/
+  claude/commands/ — Claude Code marketplace 命令
+characters/      — GIF 角色包
+.claude-plugin/  — Claude Code marketplace 插件元数据
 ```
 
-## Availability
+## ASCII 宠物
 
-The BLE API is only available when the desktop apps are in developer mode
-(**Help → Troubleshooting → Enable Developer Mode**). It's intended for
-makers and developers and isn't an officially supported product feature.
+18 种宠物，每种 7 个动画状态。菜单 → "next pet" 循环切换，选择保存到 NVS。
 
-The Claude Code integration works independently via the bridge daemon and
-does not require developer mode — it uses Claude Code's hook system.
+## GIF 角色
+
+支持自定义 GIF 角色包，通过 BLE 传输到设备。角色包格式见 `characters/bufo/`。
+
+## 配置
+
+Bridge daemon 支持以下环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `BUDDY_TRANSPORT` | `auto` | 连接方式：`auto`/`serial`/`ble` |
+| `BUDDY_BUDGET` | — | token 预算 |
+| `BUDDY_PYTHON` | — | 指定 Python 解释器路径 |
+
+## 协议参考
+
+设备通信协议详见 [REFERENCE.md](REFERENCE.md)。
