@@ -25,6 +25,11 @@ struct TamaState {
   char     promptId[40];     // pending permission request ID; empty = no prompt
   char     promptTool[20];
   char     promptHint[44];
+  char     promptBody[81];
+  uint8_t  promptKind;      // 0=permission, 1=question
+  char     promptOptions[4][17];
+  uint8_t  nOptions;
+  uint8_t  optionSel;       // currently highlighted option (for question UI)
   TaskEntry tasks[8];
   uint8_t  nTasks;
 };
@@ -117,11 +122,27 @@ static void _applyJson(const char* line, TamaState* out) {
   JsonObject pr = doc["prompt"];
   if (!pr.isNull()) {
     const char* pid = pr["id"]; const char* pt = pr["tool"]; const char* ph = pr["hint"];
+    const char* pb = pr["body"]; const char* pk = pr["kind"];
     strncpy(out->promptId,   pid ? pid : "", sizeof(out->promptId)-1);   out->promptId[sizeof(out->promptId)-1]=0;
     strncpy(out->promptTool, pt  ? pt  : "", sizeof(out->promptTool)-1); out->promptTool[sizeof(out->promptTool)-1]=0;
     strncpy(out->promptHint, ph  ? ph  : "", sizeof(out->promptHint)-1); out->promptHint[sizeof(out->promptHint)-1]=0;
+    strncpy(out->promptBody, pb  ? pb  : "", sizeof(out->promptBody)-1); out->promptBody[sizeof(out->promptBody)-1]=0;
+    out->promptKind = (pk && strcmp(pk, "question") == 0) ? 1 : 0;
+    JsonArray opts = pr["options"];
+    out->nOptions = 0;
+    if (!opts.isNull()) {
+      for (JsonVariant ov : opts) {
+        if (out->nOptions >= 4) break;
+        const char* ol = ov.as<const char*>();
+        strncpy(out->promptOptions[out->nOptions], ol ? ol : "", 16);
+        out->promptOptions[out->nOptions][16] = 0;
+        out->nOptions++;
+      }
+    }
+    out->optionSel = 0;
   } else {
     out->promptId[0] = 0; out->promptTool[0] = 0; out->promptHint[0] = 0;
+    out->promptBody[0] = 0; out->promptKind = 0; out->nOptions = 0;
   }
   JsonArray ta = doc["tasks"];
   if (!ta.isNull()) {
