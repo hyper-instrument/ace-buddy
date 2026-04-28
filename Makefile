@@ -15,15 +15,23 @@ install: ## 安装 ace-buddy (pyserial + hooks + Claude Code 插件注册)
 	@$(PYTHON) -m pip install pyserial -q 2>/dev/null || $(PIP) install pyserial -q
 	@echo "==> 合并 hooks 到 ~/.claude/settings.json..."
 	@bash plugin/scripts/install-hooks.sh
+	@echo "==> 安装 slash 命令到 ~/.claude/commands/..."
+	@mkdir -p ~/.claude/commands
+	@BUDDY_ROOT="$$(pwd)"; \
+	for f in plugins/claude/commands/ace-buddy-*.md; do \
+		sed "s|\$$CLAUDE_PLUGIN_ROOT/plugin/scripts|$$BUDDY_ROOT/plugin/scripts|g" "$$f" \
+			> ~/.claude/commands/$$(basename "$$f") && \
+		echo "    已安装 $$(basename $$f)"; \
+	done
 	@echo "==> 注册 Claude Code marketplace 插件..."
 	@if command -v claude >/dev/null 2>&1; then \
 		claude plugin marketplace add "$(shell pwd)" 2>/dev/null && \
 		echo "    marketplace 已注册" || echo "    marketplace 注册跳过"; \
 		claude plugin install ace-buddy@ace-buddy 2>/dev/null && \
 		echo "    插件已安装" || \
-		echo "    插件安装跳过 (可手动: claude plugin marketplace add $$(pwd) && claude plugin install ace-buddy@ace-buddy)"; \
+		echo "    插件安装跳过 (命令已通过 ~/.claude/commands/ 安装)"; \
 	else \
-		echo "    Claude Code CLI 未安装, 跳过插件注册"; \
+		echo "    Claude Code CLI 未安装, 命令已通过 ~/.claude/commands/ 安装"; \
 	fi
 	@echo ""
 	@echo "✅ ace-buddy 安装完成"
@@ -35,6 +43,8 @@ uninstall: ## 卸载 ace-buddy
 	@bash plugin/scripts/stop.sh 2>/dev/null || true
 	@echo "==> 卸载 Claude Code 插件..."
 	@-claude plugin uninstall ace-buddy@ace-buddy 2>/dev/null || true
+	@echo "==> 清理 slash 命令..."
+	@rm -f ~/.claude/commands/ace-buddy-*.md
 	@echo "==> 清理 marketplace 注册..."
 	@$(PYTHON) -c "import json, os; p=os.path.expanduser('~/.claude/settings.json'); d=json.load(open(p)); d.get('enabledPlugins',{}).pop('ace-buddy', None); d.get('extraKnownMarketplaces',{}).pop('ace-buddy', None); json.dump(d, open(p,'w'), indent=2)" 2>/dev/null || true
 	@echo "==> 清理状态目录..."
