@@ -512,9 +512,7 @@ def build_heartbeat() -> dict:
         if a_msg:   hb["assistant_msg"] = a_msg
         elif ASSISTANT_MSG: hb["assistant_msg"] = ASSISTANT_MSG
 
-    tasks = scan_tasks()
-    if tasks:
-        hb["tasks"] = tasks[:8]
+    hb["tasks"] = scan_tasks()[:8]
     return hb
 
 

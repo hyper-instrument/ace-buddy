@@ -143,6 +143,8 @@ static void _applyJson(const char* line, TamaState* out) {
       n++;
     }
     out->nTasks = n;
+  } else {
+    out->nTasks = 0;
   }
   out->lastUpdated = millis();
   _lastLiveMs = millis();
