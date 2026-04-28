@@ -1,0 +1,10 @@
+{
+  "name": "ace-buddy",
+  "version": "0.1.0",
+  "description": "Claude Code companion on an ESP32 buddy device (M5StickC Plus / M5StickS3). Mirrors sessions, routes permission prompts to hardware buttons, displays token usage and session activity.",
+  "author": "hyper-instrument",
+  "homepage": "https://github.com/hyper-instrument/ace-buddy",
+  "commands": "./commands",
+  "hooks": "./settings/hooks.json",
+  "scripts": "./scripts"
+}

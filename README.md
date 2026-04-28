@@ -148,6 +148,39 @@ If you're iterating on a character and would rather skip the BLE round-trip,
 | `dizzy`     | you shook the stick         | spiral eyes, wobbling       |
 | `heart`     | approved in under 5s        | floating hearts             |
 
+## Claude Code Integration
+
+In addition to Claude Desktop (BLE), ace-buddy can work with **Claude Code
+terminal sessions** via a bridge daemon. The daemon receives hook payloads
+from Claude Code over HTTP and forwards them to the device over
+serial/BLE, using the same heartbeat protocol.
+
+### Quick start (from ace repo)
+
+```bash
+make install-buddy
+```
+
+### Manual install
+
+```bash
+pip install pyserial
+bash plugin/scripts/install-hooks.sh   # merge hooks into ~/.claude/settings.json
+bash plugin/scripts/start.sh           # start the bridge daemon
+```
+
+### Slash commands (after plugin install)
+
+| Command | Description |
+|---------|-------------|
+| `/ace-buddy-install` | Full setup (deps, hooks, flash, daemon) |
+| `/ace-buddy-start` | Start the bridge daemon |
+| `/ace-buddy-stop` | Stop the bridge daemon |
+| `/ace-buddy-status` | Show daemon + device status |
+| `/ace-buddy-flash` | Re-flash firmware |
+
+See [plugin/README.md](plugin/README.md) for configuration options.
+
 ## Project layout
 
 ```
@@ -162,6 +195,7 @@ src/
   stats.h        — NVS-backed stats, settings, owner, species choice
 characters/      — example GIF character packs
 tools/           — generators and converters
+plugin/          — Claude Code plugin (bridge daemon, hooks, commands)
 ```
 
 ## Availability
@@ -169,3 +203,6 @@ tools/           — generators and converters
 The BLE API is only available when the desktop apps are in developer mode
 (**Help → Troubleshooting → Enable Developer Mode**). It's intended for
 makers and developers and isn't an officially supported product feature.
+
+The Claude Code integration works independently via the bridge daemon and
+does not require developer mode — it uses Claude Code's hook system.
