@@ -51,10 +51,11 @@ uint8_t menuSel     = 0;
 uint8_t brightLevel = 4;           // 0..4 → ScreenBreath 20..100
 bool    btnALong    = false;
 
-enum DisplayMode { DISP_NORMAL, DISP_PET, DISP_INFO, DISP_COUNT };
+enum DisplayMode { DISP_NORMAL, DISP_PET, DISP_INFO, DISP_TASKS, DISP_COUNT };
 uint8_t displayMode = DISP_NORMAL;
 uint8_t infoPage = 0;
 uint8_t petPage = 0;
+uint8_t taskScroll = 0;
 const uint8_t PET_PAGES = 2;
 uint8_t msgScroll = 0;
 uint16_t lastLineGen = 0;
@@ -808,6 +809,63 @@ void drawInfo() {
 }
 
 
+void drawTasks() {
+  const Palette& p = characterPalette();
+  const int TOP = 70;
+  spr.fillRect(0, TOP, W, H - TOP, p.bg);
+  spr.setTextSize(1);
+  int y = TOP + 2;
+
+  spr.setTextColor(p.text, p.bg);
+  spr.setCursor(4, y); spr.print("Tasks");
+  if (tama.nTasks > 0) {
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(W - 28, y);
+    spr.printf("%u/%u", taskScroll < tama.nTasks ? taskScroll + 1 : 0, tama.nTasks);
+  }
+  y += 12;
+
+  if (tama.nTasks == 0) {
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(4, y); spr.print("no tasks");
+    return;
+  }
+
+  // Status indicator chars and colors
+  const uint16_t STATUS_COL[] = { p.textDim, HOT, GREEN };
+  const char*    STATUS_SYM[] = { "-", ">", "+" };
+
+  // Show up to 8 tasks fitting the screen, starting from taskScroll
+  uint8_t visible = (H - TOP - 14 - 14) / 16;  // rows available
+  if (visible > 8) visible = 8;
+  for (uint8_t i = 0; i < visible && (taskScroll + i) < tama.nTasks; i++) {
+    const TaskEntry& t = tama.tasks[taskScroll + i];
+    uint8_t st = t.status > 2 ? 0 : t.status;
+
+    // Status symbol
+    spr.setTextColor(STATUS_COL[st], p.bg);
+    spr.setCursor(4, y);
+    spr.print(STATUS_SYM[st]);
+
+    // Subject text
+    spr.setTextColor(st == 1 ? p.text : p.textDim, p.bg);
+    spr.setCursor(14, y);
+    spr.printf("%.20s", t.subject);
+    if (strlen(t.subject) > 20) {
+      spr.setCursor(14, y + 8);
+      spr.printf(" %.19s", t.subject + 20);
+      y += 8;
+    }
+    y += 10;
+  }
+
+  // Footer hint
+  y = H - 12;
+  spr.setTextColor(p.textDim, p.bg);
+  spr.setCursor(4, y);
+  spr.print("B: scroll");
+}
+
 // Greedy word-wrap into fixed-width rows. Continuation rows get a leading
 // space. Returns number of rows written.
 static uint8_t wrapInto(const char* in, char out[][24], uint8_t maxRows, uint8_t width) {
@@ -1252,6 +1310,10 @@ void loop() {
     } else if (displayMode == DISP_INFO) {
       beep(2400, 30);
       infoPage = (infoPage + 1) % INFO_PAGES;
+    } else if (displayMode == DISP_TASKS) {
+      beep(2400, 30);
+      if (tama.nTasks > 0)
+        taskScroll = (taskScroll + 1) % tama.nTasks;
     } else if (displayMode == DISP_PET) {
       beep(2400, 30);
       petPage = (petPage + 1) % PET_PAGES;
@@ -1345,6 +1407,7 @@ void loop() {
     if (blePasskey()) drawPasskey();
     else if (clocking) drawClock();
     else if (displayMode == DISP_INFO) drawInfo();
+    else if (displayMode == DISP_TASKS) drawTasks();
     else if (displayMode == DISP_PET) drawPet();
     else if (settings().hud) drawHUD();
     if (resetOpen) drawReset();

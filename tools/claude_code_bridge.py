@@ -382,6 +382,57 @@ def body_from_tool(tool: str, tin: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Task scanning (~/.claude/tasks/)
+# ---------------------------------------------------------------------------
+
+TASKS_DIR = os.path.join(os.path.expanduser("~"), ".claude", "tasks")
+_tasks_cache: list = []
+_tasks_cache_at: float = 0.0
+TASKS_TTL_SEC = 5
+
+
+def scan_tasks() -> list:
+    """Scan ~/.claude/tasks/<team>/*.json for task entries."""
+    global _tasks_cache, _tasks_cache_at
+    now = time.time()
+    if now - _tasks_cache_at < TASKS_TTL_SEC:
+        return _tasks_cache
+
+    results = []
+    try:
+        if not os.path.isdir(TASKS_DIR):
+            _tasks_cache = []
+            _tasks_cache_at = now
+            return results
+        for team in os.listdir(TASKS_DIR):
+            team_dir = os.path.join(TASKS_DIR, team)
+            if not os.path.isdir(team_dir):
+                continue
+            for fname in os.listdir(team_dir):
+                if not fname.endswith(".json"):
+                    continue
+                fpath = os.path.join(team_dir, fname)
+                try:
+                    with open(fpath) as f:
+                        task = json.load(f)
+                    if not isinstance(task, dict):
+                        continue
+                    results.append({
+                        "id": str(task.get("id", "")),
+                        "subject": (task.get("subject", "") or "")[:40],
+                        "status": task.get("status", "pending"),
+                    })
+                except (json.JSONDecodeError, OSError):
+                    continue
+    except OSError:
+        pass
+
+    _tasks_cache = results
+    _tasks_cache_at = now
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Heartbeat construction
 # ---------------------------------------------------------------------------
 
@@ -460,6 +511,10 @@ def build_heartbeat() -> dict:
         a_msg = SESSION_ASSISTANT.get(sid) if sid else None
         if a_msg:   hb["assistant_msg"] = a_msg
         elif ASSISTANT_MSG: hb["assistant_msg"] = ASSISTANT_MSG
+
+    tasks = scan_tasks()
+    if tasks:
+        hb["tasks"] = tasks[:8]
     return hb
 
 
