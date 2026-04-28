@@ -10,7 +10,7 @@ SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SELF_DIR/common.sh"
 
 SETTINGS="$HOME/.claude/settings.json"
-PLUGIN_HOOKS="$REPO_ROOT/settings/hooks.json"
+PLUGIN_HOOKS="$REPO_ROOT/hooks/hooks.json"
 MARKER="127.0.0.1:9876/hook"
 
 mkdir -p "$(dirname "$SETTINGS")"

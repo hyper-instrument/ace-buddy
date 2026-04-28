@@ -27,7 +27,7 @@ install: ## 安装 ace-buddy (pyserial + hooks + marketplace 插件)
 	fi
 	@echo ""
 	@echo "✅ ace-buddy 安装完成"
-	@echo "   在 Claude Code 中使用 /ace-buddy-start 启动 daemon"
+	@echo "   在 Claude Code 中使用 /ace-buddy:start 启动 daemon"
 	@echo "   或手动: make start"
 
 uninstall: ## 卸载 ace-buddy

@@ -86,15 +86,15 @@ daemon 启动后自动连接设备（先检测 USB serial，无则切 BLE），C
 
 ## Claude Code slash 命令
 
-插件安装后，在 Claude Code 中可用：
+插件安装后，在 Claude Code 中可用（命令带 `ace-buddy:` 命名空间前缀）：
 
 | 命令 | 说明 |
 |------|------|
-| `/ace-buddy-start` | 启动 bridge daemon |
-| `/ace-buddy-stop` | 停止 daemon |
-| `/ace-buddy-status` | 查看 daemon + 设备状态 |
-| `/ace-buddy-install` | 完整安装（依赖、hooks、固件、daemon） |
-| `/ace-buddy-flash` | 重新刷写固件 |
+| `/ace-buddy:start` | 启动 bridge daemon |
+| `/ace-buddy:stop` | 停止 daemon |
+| `/ace-buddy:status` | 查看 daemon + 设备状态 |
+| `/ace-buddy:install` | 完整安装（依赖、hooks、固件、daemon） |
+| `/ace-buddy:flash` | 重新刷写固件 |
 
 ## 设备按键
 
@@ -167,9 +167,8 @@ src/
 tools/
   claude_code_bridge.py — Bridge daemon
 scripts/         — daemon 生命周期脚本 (start/stop/status/flash/install)
-settings/        — hooks 配置
-plugins/
-  claude/commands/ — Claude Code slash 命令 (marketplace 插件)
+hooks/           — Claude Code hooks 配置 (hooks.json)
+commands/        — Claude Code slash 命令 (/ace-buddy:start, /ace-buddy:stop, ...)
 characters/      — GIF 角色包
 .claude-plugin/  — Claude Code marketplace 插件元数据
 ```
