@@ -788,8 +788,8 @@ class HookHandler(BaseHTTPRequestHandler):
 def tz_offset_seconds() -> int:
     now = time.time()
     local = datetime.fromtimestamp(now)
-    utc_dt = datetime(*datetime.fromtimestamp(now, tz=None).utctimetuple()[:6])
-    return int((local - utc_dt).total_seconds())
+    utc = datetime.utcfromtimestamp(now)
+    return int((local - utc).total_seconds())
 
 
 def pick_transport(kind: str) -> Transport:
