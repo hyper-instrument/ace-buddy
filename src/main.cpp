@@ -947,6 +947,60 @@ static void drawApproval() {
   }
 }
 
+static void drawQuestion() {
+  const Palette& p = characterPalette();
+  spr.fillRect(0, H - 120, W, 120, p.bg);
+  spr.drawFastHLine(0, H - 120, W, p.textDim);
+
+  spr.setTextSize(1);
+  spr.setTextColor(p.textDim, p.bg);
+  spr.setCursor(4, H - 118);
+  uint32_t waited = (millis() - promptArrivedMs) / 1000;
+  if (waited >= 10) spr.setTextColor(HOT, p.bg);
+  spr.printf("question %lus", (unsigned long)waited);
+
+  // Show hint (question text) wrapped
+  spr.setTextColor(p.text, p.bg);
+  int y = H - 106;
+  int hlen = strlen(tama.promptHint);
+  spr.setCursor(4, y);
+  spr.printf("%.21s", tama.promptHint);
+  if (hlen > 21) {
+    spr.setCursor(4, y + 9);
+    spr.printf("%.21s", tama.promptHint + 21);
+  }
+
+  // Draw options list
+  y = H - 84;
+  for (uint8_t i = 0; i < tama.nOptions && i < 4; i++) {
+    bool sel = (i == tama.optionSel);
+    if (sel) {
+      spr.fillRect(0, y - 1, W, 13, 0x1082);
+      spr.setTextColor(GREEN, 0x1082);
+      spr.setCursor(4, y);
+      spr.printf("> %s", tama.promptOptions[i]);
+    } else {
+      spr.setTextColor(p.textDim, p.bg);
+      spr.setCursor(10, y);
+      spr.print(tama.promptOptions[i]);
+    }
+    y += 14;
+  }
+
+  if (responseSent) {
+    spr.setTextColor(p.textDim, p.bg);
+    spr.setCursor(4, H - 12);
+    spr.print("sent...");
+  } else {
+    spr.setTextColor(GREEN, p.bg);
+    spr.setCursor(4, H - 12);
+    spr.print("A: next");
+    spr.setTextColor(0x07FF, p.bg);
+    spr.setCursor(W - 60, H - 12);
+    spr.print("B: select");
+  }
+}
+
 static void tinyHeart(int x, int y, bool filled, uint16_t col) {
   if (filled) {
     spr.fillCircle(x - 2, y, 2, col);
@@ -1064,7 +1118,10 @@ void drawPet() {
 }
 
 void drawHUD() {
-  if (tama.promptId[0]) { drawApproval(); return; }
+  if (tama.promptId[0]) {
+    if (tama.promptKind == 1 && tama.nOptions > 0) { drawQuestion(); return; }
+    drawApproval(); return;
+  }
   const Palette& p = characterPalette();
   const int SHOW = 3, LH = 8, WIDTH = 21;
   const int AREA = SHOW * LH + 4;
@@ -1255,14 +1312,21 @@ void loop() {
   if (M5.BtnA.wasReleased()) {
     if (!btnALong && !swallowBtnA) {
       if (inPrompt) {
-        char cmd[96];
-        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}", tama.promptId);
-        sendCmd(cmd);
-        responseSent = true;
-        uint32_t tookS = (millis() - promptArrivedMs) / 1000;
-        statsOnApproval(tookS);
-        beep(2400, 60);
-        if (tookS < 5) triggerOneShot(P_HEART, 2000);
+        if (tama.promptKind == 1 && tama.nOptions > 0) {
+          // Question mode: A cycles through options
+          tama.optionSel = (tama.optionSel + 1) % tama.nOptions;
+          beep(1800, 30);
+        } else {
+          // Permission mode: A approves
+          char cmd[96];
+          snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"once\"}", tama.promptId);
+          sendCmd(cmd);
+          responseSent = true;
+          uint32_t tookS = (millis() - promptArrivedMs) / 1000;
+          statsOnApproval(tookS);
+          beep(2400, 60);
+          if (tookS < 5) triggerOneShot(P_HEART, 2000);
+        }
       } else if (resetOpen) {
         beep(1800, 30);
         resetSel = (resetSel + 1) % RESET_N;
@@ -1288,12 +1352,22 @@ void loop() {
     if (swallowBtnB) { swallowBtnB = false; }
     else
     if (inPrompt) {
-      char cmd[96];
-      snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}", tama.promptId);
-      sendCmd(cmd);
-      responseSent = true;
-      statsOnDenial();
-      beep(600, 60);
+      if (tama.promptKind == 1 && tama.nOptions > 0) {
+        // Question mode: B confirms selected option
+        char cmd[96];
+        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"option:%u\"}", tama.promptId, tama.optionSel);
+        sendCmd(cmd);
+        responseSent = true;
+        beep(2400, 60);
+      } else {
+        // Permission mode: B denies
+        char cmd[96];
+        snprintf(cmd, sizeof(cmd), "{\"cmd\":\"permission\",\"id\":\"%s\",\"decision\":\"deny\"}", tama.promptId);
+        sendCmd(cmd);
+        responseSent = true;
+        statsOnDenial();
+        beep(600, 60);
+      }
     } else if (resetOpen) {
       beep(2400, 30);
       applyReset(resetSel);
