@@ -1,0 +1,12 @@
+---
+description: Start the ace-buddy bridge daemon (background).
+---
+
+Starts the `claude_code_bridge.py` daemon in the background. Writes its
+PID to `~/.ace-buddy/daemon.pid` and logs to `~/.ace-buddy/daemon.log`.
+Idempotent -- re-running while already up is a no-op.
+
+Transport defaults to `auto` (tries USB serial first, falls back to BLE).
+Override via env: `BUDDY_TRANSPORT=ble BUDDY_BUDGET=1000000`.
+
+!`~/.ace-buddy/bin/start.sh`
