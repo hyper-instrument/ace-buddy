@@ -35,6 +35,8 @@ uninstall: ## 卸载 ace-buddy
 	@bash plugin/scripts/stop.sh 2>/dev/null || true
 	@echo "==> 卸载 Claude Code 插件..."
 	@-claude plugin uninstall ace-buddy@ace-buddy 2>/dev/null || true
+	@echo "==> 清理 marketplace 注册..."
+	@$(PYTHON) -c "import json, os; p=os.path.expanduser('~/.claude/settings.json'); d=json.load(open(p)); d.get('extraKnownMarketplaces',{}).pop('ace-buddy', None); json.dump(d, open(p,'w'), indent=2)" 2>/dev/null || true
 	@echo "==> 清理状态目录..."
 	@rm -rf ~/.ace-buddy
 	@echo "✅ ace-buddy 已卸载"
