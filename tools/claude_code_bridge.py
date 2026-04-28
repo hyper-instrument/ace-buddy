@@ -43,7 +43,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Nordic UART Service UUIDs -- match the firmware's ble_bridge.cpp.
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -840,7 +840,8 @@ def main():
     TRANSPORT.start(on_rx_byte, on_connect=_handshake)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
 
-    srv = HTTPServer(("127.0.0.1", args.http_port), HookHandler)
+    srv = ThreadingHTTPServer(("127.0.0.1", args.http_port), HookHandler)
+    srv.daemon_threads = True
     log(f"[http] listening on 127.0.0.1:{args.http_port}  budget={BUDGET_LIMIT}")
     log("[ready] start a Claude Code session with the hooks installed")
     try:
