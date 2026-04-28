@@ -673,6 +673,7 @@ class HookHandler(BaseHTTPRequestHandler):
         sid = p.get("session_id", "")
         with STATE_LOCK:
             SESSIONS_RUNNING.discard(sid)
+            SESSIONS_TOTAL.discard(sid)
         add_transcript("session done"); BUMP_EVENT.set()
         return {}
 
