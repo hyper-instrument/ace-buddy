@@ -838,6 +838,7 @@ void drawTasks() {
   // Show up to 8 tasks fitting the screen, starting from taskScroll
   uint8_t visible = (H - TOP - 14 - 14) / 16;  // rows available
   if (visible > 8) visible = 8;
+  if (taskScroll >= tama.nTasks) taskScroll = 0;
   for (uint8_t i = 0; i < visible && (taskScroll + i) < tama.nTasks; i++) {
     const TaskEntry& t = tama.tasks[taskScroll + i];
     uint8_t st = t.status > 2 ? 0 : t.status;

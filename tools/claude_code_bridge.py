@@ -422,7 +422,7 @@ def scan_tasks() -> list:
                         "subject": (task.get("subject", "") or "")[:40],
                         "status": task.get("status", "pending"),
                     })
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError, ValueError):
                     continue
     except OSError:
         pass
