@@ -511,9 +511,7 @@ def build_heartbeat() -> dict:
         if s_model:       hb["model"] = s_model
         elif MODEL_NAME:   hb["model"] = MODEL_NAME
 
-    tasks = scan_tasks()[:8]
-    for t in tasks:
-        t["subject"] = t["subject"][:20]
+    tasks = [{**t, "subject": t["subject"][:20]} for t in scan_tasks()[:8]]
     hb["tasks"] = tasks
 
     # Safety: if heartbeat exceeds firmware buffer, progressively drop
@@ -528,6 +526,7 @@ def build_heartbeat() -> dict:
     if len(raw) > _HB_MAX_BYTES:
         hb.pop("entries", None)
         hb["tasks"] = hb.get("tasks", [])[:4]
+        raw = json.dumps(hb, separators=(",", ":"), ensure_ascii=False)
     if len(raw) > _HB_MAX_BYTES:
         if "prompt" in hb:
             hb["prompt"]["body"] = hb["prompt"]["body"][:30]
