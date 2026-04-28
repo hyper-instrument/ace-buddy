@@ -798,7 +798,7 @@ class HookHandler(BaseHTTPRequestHandler):
         tool = p.get("tool_name", "?")
         tin  = p.get("tool_input") or {}
 
-        if p.get("permission_mode") == "bypassPermissions":
+        if p.get("permission_mode") == "bypassPermissions" and tool != "AskUserQuestion":
             add_transcript(f"{tool} (bypass)")
             BUMP_EVENT.set()
             return {"hookSpecificOutput": {
