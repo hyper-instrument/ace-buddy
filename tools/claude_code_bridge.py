@@ -717,7 +717,7 @@ class HookHandler(BaseHTTPRequestHandler):
                 for o in (tin.get("options") or [])[:4]:
                     option_labels.append(str(o.get("label")) if isinstance(o, dict) else str(o))
 
-        prompt_id = f"req_{int(time.time() * 1000)}_{os.getpid()}"
+        prompt_id = f"req_{int(time.time() * 1000)}_{os.getpid()}_{threading.get_ident()}"
         event = threading.Event()
         holder = {"event": event, "decision": None}
         PENDING[prompt_id] = holder
