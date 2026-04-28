@@ -36,7 +36,7 @@ make install
 安装会自动完成：
 - 安装 Python 依赖（pyserial）
 - 合并 hooks 到 `~/.claude/settings.json`
-- 注册 Claude Code marketplace 插件（`/ace-buddy-*` 命令）
+- 注册 Claude Code marketplace 插件（`/ace-buddy:*` 命令）
 
 ### 2. 刷固件
 
@@ -57,7 +57,7 @@ pio run -t erase && pio run -t upload
 
 **在 Claude Code 中：**
 ```
-/ace-buddy-start
+/ace-buddy:start
 ```
 
 **或手动：**

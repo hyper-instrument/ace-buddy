@@ -2,4 +2,4 @@
 description: Stop the ace-buddy bridge daemon.
 ---
 
-!`bash "$CLAUDE_PLUGIN_ROOT/scripts/stop.sh"`
+!`~/.ace-buddy/bin/stop.sh`

@@ -4,4 +4,4 @@ description: First-time setup for ace-buddy -- checks Python deps, merges hooks,
 
 Run the full install. Safe to re-run; every step is idempotent.
 
-!`bash "$CLAUDE_PLUGIN_ROOT/scripts/install.sh"`
+!`~/.ace-buddy/bin/install.sh`

@@ -10,11 +10,19 @@ help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: ## 安装 ace-buddy (pyserial + hooks + marketplace 插件)
+install: ## 安装 ace-buddy (pyserial + hooks + wrapper scripts + marketplace 插件)
 	@echo "==> 安装 Python 依赖 (pyserial)..."
 	@$(PYTHON) -m pip install pyserial -q 2>/dev/null || $(PIP) install pyserial -q
 	@echo "==> 合并 hooks 到 ~/.claude/settings.json..."
 	@bash scripts/install-hooks.sh
+	@echo "==> 生成 wrapper scripts 到 ~/.ace-buddy/bin/..."
+	@mkdir -p ~/.ace-buddy/bin
+	@for f in scripts/start.sh scripts/stop.sh scripts/status.sh scripts/install.sh scripts/flash.sh; do \
+		name=$$(basename "$$f"); \
+		printf '#!/bin/bash\nexec bash "%s/%s" "$$@"\n' "$$(pwd)" "$$f" > ~/.ace-buddy/bin/$$name; \
+		chmod +x ~/.ace-buddy/bin/$$name; \
+		echo "    ~/.ace-buddy/bin/$$name -> $$(pwd)/$$f"; \
+	done
 	@echo "==> 注册 Claude Code marketplace 插件..."
 	@if command -v claude >/dev/null 2>&1; then \
 		claude plugin marketplace add "$(shell pwd)" 2>/dev/null && \
