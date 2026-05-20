@@ -2,3 +2,6 @@
 .vscode/
 .DS_Store
 data/
+.env
+feishu-claude-code/
+tools/__pycache__/

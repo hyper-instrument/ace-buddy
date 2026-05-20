@@ -127,9 +127,15 @@ Bridge daemon 每 5 秒轮询一次任务文件，最多显示 8 个。
 Claude Code hook ──POST──> bridge daemon (127.0.0.1:9876) ──serial/BLE──> ACE buddy 设备
                                   ^                                            |
                                   +──────────── permission ack ────────────────+
+
+飞书模式（可选）：
+Claude Code hook ──POST──> bridge daemon ──Feishu API──> 飞书交互卡片
+                               ^   ^                          |
+                               │   └──── WebSocket ───────────┘
+                               └──────── permission reply
 ```
 
-- **Bridge daemon** (`tools/claude_code_bridge.py`): Python HTTP 服务，接收 Claude Code hooks，转为 heartbeat JSON 发送到设备
+- **Bridge daemon** (`tools/claude_code_bridge.py`): Python HTTP 服务，接收 Claude Code hooks，转为 heartbeat JSON 发送到设备；也支持飞书模式，将权限确认推送到飞书交互卡片
 - **Heartbeat 协议**: 每 ~10s 或状态变化时发送，包含 sessions、tokens、prompt、tasks 等数据
 - **设备固件**: M5StickC Plus (ESP32)，基于 Arduino + M5Unified
 
@@ -183,13 +189,44 @@ characters/      — GIF 角色包
 
 ## 配置
 
-Bridge daemon 支持以下环境变量：
+所有配置统一放在项目根目录的 `.env` 文件，bridge 启动时自动加载。已有的 `.env` 是 `feishu-claude-code` 共用的一套凭证。
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `BUDDY_TRANSPORT` | `auto` | 连接方式：`auto`/`serial`/`ble` |
-| `BUDDY_BUDGET` | — | token 预算 |
-| `BUDDY_PYTHON` | — | 指定 Python 解释器路径 |
+```bash
+# 设备连接方式（auto / serial / ble / none）
+BUDDY_TRANSPORT=auto
+BUDDY_BUDGET=200000
+
+# 飞书权限确认：填了 FEISHU_APP_ID + FEISHU_APP_SECRET 就会自动启用飞书模式（无需 ESP32 设备）
+# BUDDY_FEISHU_USER_ID 可以留空，第一次给 bot 发消息时会自动配对
+FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
+FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+| 变量 | 说明 |
+|------|------|
+| `BUDDY_TRANSPORT` | 连接方式：`auto`/`serial`/`ble`/`none` |
+| `BUDDY_BUDGET` | context window 预算 |
+| `FEISHU_APP_ID` | 飞书应用 ID |
+| `FEISHU_APP_SECRET` | 飞书应用密钥 |
+| `BUDDY_FEISHU_USER_ID` | （可选）预绑定用户 `open_id`，留空则自动配对 |
+
+### 飞书模式
+
+不想带 ESP32 设备？在 `.env` 里填好 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，然后直接启动：
+
+```bash
+/buddy start
+# 或手动
+python3 tools/claude_code_bridge.py
+```
+
+**自动配对：** 在飞书给 bot 发任意一条消息，bridge 就会自动记住你的 `open_id`，之后权限确认卡片就会推送到你这里。
+
+**交互确认：** 飞书模式下权限确认会通过交互卡片推送到你的手机，点击「确认 / 取消 / 选项」即可。
+
+**完全独立：** bridge 自己启动飞书 WebSocket 客户端，不需要 `feishu-claude-code`，不需要 ngrok，不需要配置飞书回调地址。
+
+详见 [CLAUDE.md](CLAUDE.md) 中的「Feishu (Lark) Mode」章节。
 
 ## 协议参考
 

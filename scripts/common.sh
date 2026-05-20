@@ -23,6 +23,11 @@ pick_python() {
   if [ -n "${BUDDY_PYTHON:-}" ] && [ -x "${BUDDY_PYTHON}" ]; then
     echo "$BUDDY_PYTHON"; return
   fi
+  # Prefer feishu-claude-code venv if it has lark_oapi (needed for Feishu mode)
+  local venv_py="$REPO_ROOT/feishu-claude-code/.venv/bin/python"
+  if [ -x "$venv_py" ] && "$venv_py" -c "import lark_oapi" 2>/dev/null; then
+    echo "$venv_py"; return
+  fi
   if command -v python3 >/dev/null 2>&1; then echo "$(command -v python3)"; return; fi
   if command -v python >/dev/null 2>&1; then echo "$(command -v python)"; return; fi
   echo ""; return 1

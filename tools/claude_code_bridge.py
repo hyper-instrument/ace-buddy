@@ -37,13 +37,28 @@ import asyncio
 import glob
 import json
 import os
+import ssl
 import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Load environment variables from .env in the repo root.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_repo_root = os.path.dirname(_script_dir)
+for _dotenv_path in (os.path.join(_repo_root, ".env"), os.path.join(os.getcwd(), ".env")):
+    if os.path.exists(_dotenv_path):
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(_dotenv_path, override=True)
+        except ImportError:
+            pass
+        break
 
 # Nordic UART Service UUIDs -- match the firmware's ble_bridge.cpp.
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -74,6 +89,30 @@ SESSION_ASSISTANT   = {}       # sid -> latest assistant text (per-session)
 FOCUSED_SID         = None     # user-picked focused session (for dashboard)
 TRANSPORT           = None
 BUMP_EVENT          = threading.Event()
+
+# ---------------------------------------------------------------------------
+# Feishu (Lark) mode -- send permission prompts via Feishu interactive cards
+# ---------------------------------------------------------------------------
+
+FEISHU_MODE         = False
+FEISHU_USER_ID      = ""
+FEISHU_APP_ID       = ""
+FEISHU_APP_SECRET   = ""
+FEISHU_CLIENT       = None     # _FeishuClient instance when mode is active
+
+# Tools that Claude Code does not prompt for in default/acceptEdits mode.
+# The buddy device should not intercept them either.
+_READONLY_TOOLS = {
+    "Read", "Glob", "Grep",
+    "TaskList", "TaskGet", "TaskCreate", "TaskUpdate",
+    "WebSearch", "WebFetch",
+    "SendMessage",
+    "CronList", "CronCreate", "CronDelete",
+    "Skill",
+}
+
+# File-mutation tools that are auto-allowed in acceptEdits mode.
+_EDIT_TOOLS = {"Edit", "Write", "MultiEdit"}
 
 
 def log(*a, **kw):
@@ -226,6 +265,160 @@ class BLETransport(Transport):
             log(f"[ble] write fail: {e!r}")
 
     def connected(self): return self._connected_evt.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Feishu (Lark) lightweight client (std-lib only, no lark_oapi dep)
+# ---------------------------------------------------------------------------
+
+class _FeishuClient:
+    """Sync Feishu API client for sending interactive cards."""
+
+    _TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    _MSG_URL = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+
+    def __init__(self, app_id: str, app_secret: str):
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self._token = None
+        self._token_expires = 0.0
+        self._ctx = ssl.create_default_context()
+
+    def _ensure_token(self) -> str:
+        if self._token and time.time() < self._token_expires - 60:
+            return self._token
+        body = json.dumps({"app_id": self.app_id, "app_secret": self.app_secret}).encode()
+        req = urllib.request.Request(
+            self._TOKEN_URL, data=body,
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, context=self._ctx, timeout=10) as r:
+                data = json.loads(r.read())
+                self._token = data["tenant_access_token"]
+                self._token_expires = time.time() + data.get("expire", 7200)
+                return self._token
+        except Exception as e:
+            log(f"[feishu] token error: {e}")
+            raise
+
+    def _api(self, req: urllib.request.Request) -> dict:
+        req.add_header("Authorization", f"Bearer {self._ensure_token()}")
+        try:
+            with urllib.request.urlopen(req, context=self._ctx, timeout=10) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", "replace")
+            log(f"[feishu] HTTP {e.code}: {body}")
+            raise
+
+    def send_card(self, receive_id: str, elements: list) -> str:
+        """Send an interactive card. Returns message_id or empty string."""
+        card = json.dumps({"schema": "2.0", "body": {"elements": elements}}, ensure_ascii=False)
+        body = json.dumps({
+            "receive_id": receive_id,
+            "msg_type": "interactive",
+            "content": card,
+        }, ensure_ascii=False).encode()
+        req = urllib.request.Request(self._MSG_URL, data=body,
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        resp = self._api(req)
+        return (resp.get("data") or {}).get("message_id", "")
+
+
+def _build_permission_card(prompt_obj: dict) -> list:
+    """Build Feishu card elements for a permission / question prompt."""
+    tool = prompt_obj["tool"]
+    body_text = prompt_obj.get("body", "")
+    kind = prompt_obj.get("kind", "permission")
+    pid = prompt_obj["id"]
+    opts = prompt_obj.get("option_labels") or []
+
+    elements = []
+    header = f"**🤖 Claude 请求确认**\n\n**{tool}**"
+    if body_text:
+        header += f"\n\n```\n{body_text[:400]}\n```"
+    elements.append({"tag": "markdown", "content": header})
+
+    if kind == "question" and opts:
+        # AskUserQuestion option buttons
+        buttons = []
+        for i, label in enumerate(opts[:4]):
+            buttons.append({
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": label[:20]},
+                "type": "primary" if i == 0 else "default",
+                "size": "small",
+                "value": {"action": "buddy_option", "pid": pid, "idx": i},
+                "behaviors": [{"type": "callback", "value": {"action": "buddy_option", "pid": pid, "idx": i}}],
+            })
+        # Flow layout for short labels, vertical otherwise
+        short = all(len(lb) <= 10 for lb in opts[:4])
+        if short and buttons:
+            columns = [{"tag": "column", "width": "auto", "elements": [b]} for b in buttons]
+            elements.append({"tag": "column_set", "flex_mode": "flow", "columns": columns})
+        else:
+            elements.extend(buttons)
+    else:
+        # Allow / Deny buttons
+        elements.append({
+            "tag": "column_set",
+            "flex_mode": "flow",
+            "columns": [
+                {"tag": "column", "width": "auto", "elements": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "✅ 确认"},
+                    "type": "primary",
+                    "size": "small",
+                    "value": {"action": "buddy_allow", "pid": pid},
+                    "behaviors": [{"type": "callback", "value": {"action": "buddy_allow", "pid": pid}}],
+                }]},
+                {"tag": "column", "width": "auto", "elements": [{
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "❌ 取消"},
+                    "type": "default",
+                    "size": "small",
+                    "value": {"action": "buddy_deny", "pid": pid},
+                    "behaviors": [{"type": "callback", "value": {"action": "buddy_deny", "pid": pid}}],
+                }]},
+            ]
+        })
+    return elements
+
+
+def _handle_feishu_callback(payload: dict) -> dict:
+    """Process a Feishu card action callback. Returns HTTP response body."""
+    event = payload.get("event", {})
+    action = event.get("action", {})
+    value = action.get("value", {})
+    pid = value.get("pid", "")
+    action_type = value.get("action", "")
+
+    if not pid:
+        return {}
+
+    h = PENDING.get(pid)
+    if not h:
+        log(f"[feishu] callback for unknown prompt {pid}")
+        return {}
+
+    decision = None
+    toast = "已处理"
+    if action_type == "buddy_allow":
+        decision = "once"
+        toast = "✅ 已确认"
+    elif action_type == "buddy_deny":
+        decision = "deny"
+        toast = "❌ 已取消"
+    elif action_type == "buddy_option":
+        idx = value.get("idx", -1)
+        decision = f"option:{idx}"
+        toast = f"已选择选项 {idx + 1}"
+
+    if decision is not None:
+        h["decision"] = decision
+        h["event"].set()
+        log(f"[feishu] prompt {pid} -> {decision}")
+    return {"toast": {"type": "info", "content": toast}}
 
 
 # ---------------------------------------------------------------------------
@@ -705,6 +898,20 @@ class HookHandler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._reply(400, {"error": str(e)})
 
+        # ── Feishu callback (card action or URL verification) ──
+        if payload.get("type") == "url_verification":
+            return self._reply(200, {"challenge": payload.get("challenge", "")})
+
+        # Feishu card action callbacks have event.action.value
+        if payload.get("event", {}).get("action"):
+            try:
+                resp_body = _handle_feishu_callback(payload)
+            except Exception as e:
+                log(f"[feishu] callback error: {e!r}")
+                resp_body = {}
+            return self._reply(200, resp_body)
+
+        # ── Claude Code hooks ──
         event = payload.get("hook_event_name", "")
         log(f"[hook] {event} session={payload.get('session_id', '')[:8]}")
 
@@ -797,14 +1004,30 @@ class HookHandler(BaseHTTPRequestHandler):
         sid  = p.get("session_id", "")
         tool = p.get("tool_name", "?")
         tin  = p.get("tool_input") or {}
+        mode = p.get("permission_mode", "default")
 
-        if p.get("permission_mode") == "bypassPermissions" and tool != "AskUserQuestion":
+        if mode == "bypassPermissions" and tool != "AskUserQuestion":
             add_transcript(f"{tool} (bypass)")
             BUMP_EVENT.set()
             return {"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
                 "permissionDecisionReason": "bypass-permissions mode",
+            }}
+
+        # Read-only / lookup tools: Claude Code does not prompt for these,
+        # so the buddy device should not either.
+        if tool in _READONLY_TOOLS:
+            return {}
+
+        # acceptEdits mode auto-allows file mutations.
+        if mode == "acceptEdits" and tool in _EDIT_TOOLS:
+            add_transcript(f"{tool} (accept-edits)")
+            BUMP_EVENT.set()
+            return {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": "accept-edits mode",
             }}
 
         hint = hint_from_tool(tool, tin)
@@ -838,6 +1061,18 @@ class HookHandler(BaseHTTPRequestHandler):
                 ACTIVE_PROMPT = prompt_obj
         BUMP_EVENT.set()
 
+        # ── Feishu mode: send interactive card to user ──
+        if FEISHU_MODE and FEISHU_CLIENT and FEISHU_USER_ID:
+            try:
+                elements = _build_permission_card(prompt_obj)
+                msg_id = FEISHU_CLIENT.send_card(FEISHU_USER_ID, elements)
+                if msg_id:
+                    log(f"[feishu] card sent for prompt {prompt_id}")
+                else:
+                    log(f"[feishu] card send failed for prompt {prompt_id}")
+            except Exception as e:
+                log(f"[feishu] send error: {e}")
+
         try:
             got = event.wait(timeout=30)
             decision = holder["decision"] if got else None
@@ -857,11 +1092,12 @@ class HookHandler(BaseHTTPRequestHandler):
             except ValueError: idx = -1
             label = option_labels[idx] if 0 <= idx < len(option_labels) else ""
             add_transcript(f"{tool} -> {label[:30]}"); BUMP_EVENT.set()
+            source = "Feishu" if FEISHU_MODE else "ace-buddy device"
             return {"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
                 "permissionDecisionReason": (
-                    f"The user answered on the ace-buddy device: "
+                    f"The user answered on the {source}: "
                     f"'{label}' (option {idx + 1}). Proceed using this answer "
                     f"directly -- do NOT call AskUserQuestion again."
                 ),
@@ -869,16 +1105,21 @@ class HookHandler(BaseHTTPRequestHandler):
 
         if decision == "once":
             add_transcript(f"{tool} allow"); BUMP_EVENT.set()
+            source = "Feishu" if FEISHU_MODE else "ace-buddy"
             return {"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "allow",
-                "permissionDecisionReason": "Approved on ace-buddy",
+                "permissionDecisionReason": f"Approved on {source}",
             }}
         if decision == "deny":
             add_transcript(f"{tool} deny"); BUMP_EVENT.set()
-            reason = ("The user cancelled this question on the ace-buddy "
-                      "device without answering. Ask them directly in the "
-                      "terminal instead.") if kind == "question" else "Denied on ace-buddy"
+            source = "Feishu" if FEISHU_MODE else "ace-buddy device"
+            if kind == "question":
+                reason = (f"The user cancelled this question on the {source} "
+                          "without answering. Ask them directly in the "
+                          "terminal instead.")
+            else:
+                reason = f"Denied on {source}"
             return {"hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
@@ -897,9 +1138,118 @@ def tz_offset_seconds() -> int:
     return int((local - utc).total_seconds())
 
 
-def pick_transport(kind: str) -> Transport:
+# ---------------------------------------------------------------------------
+# Feishu WebSocket handlers (lark_oapi)
+# ---------------------------------------------------------------------------
+
+def _start_feishu_ws(app_id: str, app_secret: str):
+    """Start Feishu WebSocket client in a background thread."""
+    try:
+        import lark_oapi as lark
+        from lark_oapi.api.im.v1.model import P2ImMessageReceiveV1
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            P2CardActionTrigger, P2CardActionTriggerResponse, CallBackToast,
+        )
+    except ImportError as e:
+        log(f"[feishu] lark_oapi not installed, WebSocket unavailable: {e}")
+        return
+
+    def _on_message(event: P2ImMessageReceiveV1):
+        global FEISHU_USER_ID, FEISHU_CLIENT
+        sender = event.event.sender
+        user_id = sender.sender_id.open_id
+        if not user_id:
+            return
+        if not FEISHU_USER_ID:
+            FEISHU_USER_ID = user_id
+            log(f"[feishu] auto-paired user={user_id[:8]}...")
+            if FEISHU_CLIENT:
+                try:
+                    elements = [
+                        {"tag": "markdown", "content": "**🤖 ace-buddy 已配对**\n\n权限确认卡片将发送到这里。"}
+                    ]
+                    FEISHU_CLIENT.send_card(user_id, elements)
+                except Exception as e:
+                    log(f"[feishu] welcome card error: {e}")
+        else:
+            log(f"[feishu] message from user={user_id[:8]}...")
+
+    def _on_card_action(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
+        global _last_event
+        event = data.event
+        action = event.action
+        value = action.value or {}
+        pid = value.get("pid", "")
+        action_type = value.get("action", "")
+
+        resp = P2CardActionTriggerResponse()
+        toast = CallBackToast()
+        toast.type = "info"
+
+        if not pid:
+            toast.content = "无效请求"
+            resp.toast = toast
+            return resp
+
+        h = PENDING.get(pid)
+        if not h:
+            log(f"[feishu] callback for unknown prompt {pid}")
+            toast.content = "请求已过期"
+            resp.toast = toast
+            return resp
+
+        decision = None
+        if action_type == "buddy_allow":
+            decision = "once"
+            toast.content = "✅ 已确认"
+        elif action_type == "buddy_deny":
+            decision = "deny"
+            toast.content = "❌ 已取消"
+        elif action_type == "buddy_option":
+            idx = value.get("idx", -1)
+            decision = f"option:{idx}"
+            toast.content = f"已选择选项 {idx + 1}"
+        else:
+            toast.content = "未知操作"
+            resp.toast = toast
+            return resp
+
+        h["decision"] = decision
+        h["event"].set()
+        log(f"[feishu] prompt {pid} -> {decision}")
+        resp.toast = toast
+        return resp
+
+    handler = lark.EventDispatcherHandler.builder("", "") \
+        .register_p2_im_message_receive_v1(_on_message) \
+        .register_p2_card_action_trigger(_on_card_action) \
+        .build()
+
+    ws_client = lark.ws.Client(
+        app_id,
+        app_secret,
+        event_handler=handler,
+        log_level=lark.LogLevel.WARNING,
+    )
+
+    def _run_ws():
+        log("[feishu] WebSocket connecting...")
+        try:
+            ws_client.start()
+        except Exception as e:
+            log(f"[feishu] WebSocket error: {e}")
+
+    t = threading.Thread(target=_run_ws, daemon=True, name="feishu-ws")
+    t.start()
+
+
+def pick_transport(kind: str, feishu_mode: bool = False) -> Transport | None:
     """Resolve --transport flag to a concrete Transport."""
     candidates = sorted(glob.glob("/dev/cu.usbserial-*") + glob.glob("/dev/ttyUSB*"))
+
+    if kind == "none":
+        log("[transport] disabled (feishu mode)")
+        return None
 
     if kind == "serial":
         if not candidates:
@@ -913,16 +1263,19 @@ def pick_transport(kind: str) -> Transport:
     if candidates:
         log("[transport] serial device found, using USB")
         return SerialTransport(candidates[0])
+    if feishu_mode:
+        log("[transport] no serial device, skipping BLE (feishu mode)")
+        return None
     log("[transport] no serial device, falling back to BLE")
     return BLETransport()
 
 
 def main():
-    global BUDGET_LIMIT, TRANSPORT
+    global BUDGET_LIMIT, TRANSPORT, FEISHU_MODE, FEISHU_USER_ID, FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_CLIENT
 
     ap = argparse.ArgumentParser(description="ace-buddy <-> Claude Code bridge daemon")
     ap.add_argument("--port", help="explicit serial port (implies --transport serial)")
-    ap.add_argument("--transport", choices=("auto", "serial", "ble"), default="auto")
+    ap.add_argument("--transport", choices=("auto", "serial", "ble", "none"), default="auto")
     ap.add_argument("--http-port", type=int, default=9876)
     ap.add_argument("--owner", default=os.environ.get("USER", ""))
     ap.add_argument("--budget", type=int, default=200000,
@@ -931,10 +1284,28 @@ def main():
 
     BUDGET_LIMIT = max(0, args.budget)
 
+    # ── Feishu mode setup ──
+    # All config comes from .env (loaded above) or environment variables.
+    # FEISHU_USER_ID can be auto-paired later from im.message.receive_v1 events.
+    FEISHU_USER_ID = os.environ.get("BUDDY_FEISHU_USER_ID", "")
+    FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID", "")
+    FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
+    FEISHU_MODE = bool(FEISHU_APP_ID and FEISHU_APP_SECRET)
+
+    if FEISHU_MODE:
+        FEISHU_CLIENT = _FeishuClient(FEISHU_APP_ID, FEISHU_APP_SECRET)
+        if FEISHU_USER_ID:
+            log(f"[feishu] mode enabled, pre-configured user={FEISHU_USER_ID[:8]}...")
+        else:
+            log("[feishu] mode enabled, waiting for user to send a message to auto-pair")
+        _start_feishu_ws(FEISHU_APP_ID, FEISHU_APP_SECRET)
+    else:
+        log("[feishu] mode disabled (set FEISHU_APP_ID and FEISHU_APP_SECRET in .env to enable)")
+
     if args.port:
         TRANSPORT = SerialTransport(args.port)
     else:
-        TRANSPORT = pick_transport(args.transport)
+        TRANSPORT = pick_transport(args.transport, feishu_mode=FEISHU_MODE)
 
     def _handshake():
         if args.owner:
@@ -942,9 +1313,15 @@ def main():
         send_line({"time": [int(time.time()), tz_offset_seconds()]})
         send_line(build_heartbeat())
 
-    TRANSPORT.start(on_rx_byte, on_connect=_handshake)
-    threading.Thread(target=heartbeat_loop, daemon=True).start()
+    if TRANSPORT is not None:
+        TRANSPORT.start(on_rx_byte, on_connect=_handshake)
+        threading.Thread(target=heartbeat_loop, daemon=True).start()
+    else:
+        log("[transport] no device transport, heartbeat disabled")
 
+    # Always listen on 127.0.0.1.  Feishu callbacks are proxied by
+    # feishu-claude-code (WebSocket -> local POST) so we don't need
+    # to expose this port publicly.
     srv = ThreadingHTTPServer(("127.0.0.1", args.http_port), HookHandler)
     srv.daemon_threads = True
     log(f"[http] listening on 127.0.0.1:{args.http_port}  budget={BUDGET_LIMIT}")

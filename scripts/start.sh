@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Start the bridge daemon in the background. Idempotent.
 #
-# Config via env vars:
-#   BUDDY_TRANSPORT   auto|serial|ble (default: auto)
+# All config is read from .env (loaded automatically by the bridge).
+# Supported env vars (see .env.example):
+#   BUDDY_TRANSPORT   auto|serial|ble|none (default: auto)
 #   BUDDY_BUDGET      context window budget for the device (default: 200000)
 #   BUDDY_OWNER       override $USER as the displayed owner name
 #   BUDDY_HTTP_PORT   HTTP listener port (default: 9876)
