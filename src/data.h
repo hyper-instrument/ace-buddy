@@ -123,6 +123,10 @@ static void _applyJson(const char* line, TamaState* out) {
   if (!pr.isNull()) {
     const char* pid = pr["id"]; const char* pt = pr["tool"]; const char* ph = pr["hint"];
     const char* pb = pr["body"]; const char* pk = pr["kind"];
+    // Only reset option selection when a NEW prompt arrives (different ID).
+    // Keepalive heartbeats re-send the same prompt; resetting here would
+    // clobber the user's A-key navigation every ~10 seconds.
+    bool newPrompt = !pid || strcmp(out->promptId, pid) != 0;
     strncpy(out->promptId,   pid ? pid : "", sizeof(out->promptId)-1);   out->promptId[sizeof(out->promptId)-1]=0;
     strncpy(out->promptTool, pt  ? pt  : "", sizeof(out->promptTool)-1); out->promptTool[sizeof(out->promptTool)-1]=0;
     strncpy(out->promptHint, ph  ? ph  : "", sizeof(out->promptHint)-1); out->promptHint[sizeof(out->promptHint)-1]=0;
@@ -139,7 +143,7 @@ static void _applyJson(const char* line, TamaState* out) {
         out->nOptions++;
       }
     }
-    out->optionSel = 0;
+    if (newPrompt) out->optionSel = 0;
   } else {
     out->promptId[0] = 0; out->promptTool[0] = 0; out->promptHint[0] = 0;
     out->promptBody[0] = 0; out->promptKind = 0; out->nOptions = 0;
